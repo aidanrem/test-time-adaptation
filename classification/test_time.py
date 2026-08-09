@@ -97,7 +97,7 @@ def evaluate(description):
                 attach_monitor(model, cfg, num_classes, device)
                 logger.info("attached constraint monitor (observation-only)")
             else:
-                model.monitor = ConstraintMonitor(params=model.params)
+                model.monitor = ConstraintMonitor(params=model.params, anchors=model.monitor.anchors)
 
         for severity in severities:
             test_data_loader = get_test_loader(
@@ -149,7 +149,7 @@ def evaluate(description):
                 model.monitor.save(os.path.join(
                     RUNDIR, f"monitor_{i_dom:02d}_{domain_name}_s{severity}.npz"))
                 if len(severities) > 1:
-                    model.monitor = ConstraintMonitor(params=model.params)
+                    model.monitor = ConstraintMonitor(params=model.params, anchors=model.monitor.anchors)
 
     if len(errs_5) > 0:
         logger.info(f"mean error: {np.mean(errs):.2%}, mean error at 5: {np.mean(errs_5):.2%}")

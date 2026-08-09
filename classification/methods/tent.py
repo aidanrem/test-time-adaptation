@@ -8,6 +8,7 @@ import torch.nn as nn
 from methods.base import TTAMethod
 from utils.registry import ADAPTATION_REGISTRY
 from utils.losses import Entropy
+from monitor.constraint_monitor import monitor_step
 
 
 @ADAPTATION_REGISTRY.register()
@@ -35,31 +36,18 @@ class Tent(TTAMethod):
         if self.mixed_precision and self.device == "cuda":
             with torch.cuda.amp.autocast():
                 outputs, loss = self.loss_calculation(x)
-            self._monitor_step(x, outputs)
+            monitor_step(self, x, outputs)
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.optimizer.zero_grad()
         else:
             outputs, loss = self.loss_calculation(x)
-            self._monitor_step(x, outputs)
+            monitor_step(self, x, outputs)
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
         return outputs
-
-    @torch.no_grad()
-    def _monitor_step(self, x, outputs):
-        """Phase-1 constraint monitor (observation-only, no-op when unattached).
-
-        Logs pre-update statistics: `outputs` are the current model's logits on
-        this batch, `source_logits` the frozen source model's logits on the same
-        batch. Never touches the gradient path.
-        """
-        if not hasattr(self, "monitor"):
-            return
-        imgs_test = x[0]
-        self.monitor.update(outputs.detach(), self.source_model(imgs_test))
 
     def collect_params(self):
         """Collect the affine scale + shift parameters from batch norms.
