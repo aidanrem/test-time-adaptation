@@ -1,4 +1,5 @@
 import os
+from monitor.constraint_monitor import attach_monitor, ConstraintMonitor
 import torch
 import logging
 import numpy as np
@@ -68,6 +69,14 @@ def evaluate(description):
     errs_5 = []
     domain_dict = {}
 
+    # ---- Phase-1 constraint monitor (observation-only) --------------------
+    # Enabled by setting the MONITOR_DIR environment variable. When unset,
+    # this file behaves exactly as upstream.
+    RUNDIR = os.environ.get("MONITOR_DIR", "")
+    if RUNDIR:
+        os.makedirs(RUNDIR, exist_ok=True)
+    # -----------------------------------------------------------------------
+
     # start evaluation
     for i_dom, domain_name in enumerate(domain_seq_loop):
         if i_dom == 0 or "reset_each_shift" in cfg.SETTING:
@@ -78,6 +87,17 @@ def evaluate(description):
                 logger.warning("not resetting model")
         else:
             logger.warning("not resetting model")
+
+        # Build the frozen source anchor once (expensive), but reset the trace
+        # log at every domain so each saved .npz covers exactly one corruption.
+        # Without this reset, every file would contain the cumulative history
+        # from round 0 and per-domain traces could not be compared.
+        if RUNDIR:
+            if not hasattr(model, "monitor"):
+                attach_monitor(model, cfg, num_classes, device)
+                logger.info("attached constraint monitor (observation-only)")
+            else:
+                model.monitor = ConstraintMonitor(params=model.params)
 
         for severity in severities:
             test_data_loader = get_test_loader(
@@ -121,6 +141,15 @@ def evaluate(description):
                 errs_5.append(err)
 
             logger.info(f"{cfg.CORRUPTION.DATASET} error % [{domain_name}{severity}][#samples={num_samples}]: {err:.2%}")
+
+            # save this (domain, severity) block, then clear the log so the next
+            # severity within the same domain also gets an independent trace
+            if RUNDIR and hasattr(model, "monitor"):
+                model.monitor.block_acc = float(acc)
+                model.monitor.save(os.path.join(
+                    RUNDIR, f"monitor_{i_dom:02d}_{domain_name}_s{severity}.npz"))
+                if len(severities) > 1:
+                    model.monitor = ConstraintMonitor(params=model.params)
 
     if len(errs_5) > 0:
         logger.info(f"mean error: {np.mean(errs):.2%}, mean error at 5: {np.mean(errs_5):.2%}")

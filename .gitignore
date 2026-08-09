@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+classification/data/
+classification/ckpt/
+classification/output/
