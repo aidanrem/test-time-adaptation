@@ -1,6 +1,7 @@
 from copy import deepcopy
 from methods.base import TTAMethod, forward_decorator
 from utils.registry import ADAPTATION_REGISTRY
+from monitor.constraint_monitor import monitor_step
 
 
 @ADAPTATION_REGISTRY.register()
@@ -11,7 +12,9 @@ class Source(TTAMethod):
     @forward_decorator
     def forward_and_adapt(self, x):
         imgs_test = x[0]
-        return self.model(imgs_test)
+        outputs = self.model(imgs_test)
+        monitor_step(self, x, outputs)
+        return outputs
 
     def copy_model_and_optimizer(self):
         """Copy the model and optimizer states for resetting after adaptation."""
