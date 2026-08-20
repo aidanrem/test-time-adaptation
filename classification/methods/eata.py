@@ -15,6 +15,7 @@ from methods.base import TTAMethod
 from datasets.data_loading import get_source_loader
 from utils.registry import ADAPTATION_REGISTRY
 from utils.losses import Entropy
+from monitor.constraint_monitor import monitor_step
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,8 @@ class EATA(TTAMethod):
                                                  preprocess=model.model_preprocess,
                                                  data_root_dir=cfg.DATA_DIR,
                                                  batch_size=batch_size_src,
-                                                 ckpt_path=cfg.MODEL.CKPT_PATH,
+                                                 use_clip=cfg.MODEL.USE_CLIP,
+                                                 train_split=False,
                                                  num_samples=cfg.SOURCE.NUM_SAMPLES,    # number of samples for ewc reg.
                                                  percentage=cfg.SOURCE.PERCENTAGE,
                                                  workers=min(cfg.SOURCE.NUM_WORKERS, os.cpu_count()))
@@ -125,6 +127,7 @@ class EATA(TTAMethod):
         if self.mixed_precision and self.device == "cuda":
             with torch.cuda.amp.autocast():
                 outputs, loss, perform_update = self.loss_calculation(x)
+            monitor_step(self, x, outputs)
             # update model only if not all instances have been filtered
             if perform_update:
                 self.scaler.scale(loss).backward()
@@ -133,6 +136,7 @@ class EATA(TTAMethod):
             self.optimizer.zero_grad()
         else:
             outputs, loss, perform_update = self.loss_calculation(x)
+            monitor_step(self, x, outputs)
             # update model only if not all instances have been filtered
             if perform_update:
                 loss.backward()
