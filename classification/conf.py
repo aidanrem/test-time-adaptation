@@ -224,6 +224,19 @@ _C.EATA.FISHER_ALPHA = 2000.0
 _C.EATA.D_MARGIN = 0.05
 _C.EATA.MARGIN_E0 = 0.4             # Will be multiplied by: EATA.MARGIN_E0 * math.log(num_classes)
 
+# ---------------------------------------------------------------------------
+# Add to classification/conf.py, alongside the other method config nodes
+# (e.g. just after the _C.EATA block). Required for command-line overrides
+# like `LYTTA.TAU 2.0`; without it yacs rejects the key.
+# ---------------------------------------------------------------------------
+_C.LYTTA = CfgNode()
+_C.LYTTA.TAU = 1.0          # constraint margin (nats). g = KL_to_anchor - TAU
+_C.LYTTA.PHI = "quad"       # 'quad' | 'exp' | 'const'   (const = fixed-weight ablation)
+_C.LYTTA.LAMBDA = 0.01      # Lyapunov scale
+_C.LYTTA.MU_MAX = 50.0      # clamp on mu_t
+_C.LYTTA.Q_DECAY = 1.0      # 1.0 = pure cumulative CCV; <1 = EMA (see LYTTA.md)
+_C.LYTTA.PENALTY = "gplus"  # 'gplus' (penalize only violation) | 'g' (signed)
+
 # --------------------------------- SAR options ---------------------------- #
 _C.SAR = CfgNode()
 

@@ -10,6 +10,7 @@ from methods.lame import LAME
 from methods.memo import MEMO
 from methods.tent import Tent
 from methods.eata import EATA
+from methods.lytta import LyTTA
 from methods.sar import SAR
 from methods.rpl import RPL
 from methods.roid import ROID
@@ -22,6 +23,6 @@ from methods.tpt import TPT
 __all__ = [
     'Source', 'BNTest', 'BNAlpha', 'BNEMA', 'TTAug',
     'CoTTA', 'RMT', 'SANTA', 'RoTTA', 'AdaContrast', 'GTTA',
-    'LAME', 'MEMO', 'Tent', 'EATA', 'SAR', 'RPL', 'ROID',
+    'LAME', 'MEMO', 'Tent', 'EATA', 'LyTTA', 'SAR', 'RPL', 'ROID',
     'CMF', 'DeYO', 'VTE', 'TPT',
 ]
