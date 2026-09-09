@@ -10,6 +10,7 @@ from augmentations.transforms_cotta import get_tta_transforms
 from utils.registry import ADAPTATION_REGISTRY
 from utils.losses import Entropy, SymmetricCrossEntropy, SoftLikelihoodRatio
 from utils.misc import ema_update_model
+from monitor.constraint_monitor import monitor_step
 
 
 @torch.no_grad()
@@ -96,12 +97,14 @@ class ROID(TTAMethod):
         if self.mixed_precision and self.device == "cuda":
             with torch.cuda.amp.autocast():
                 outputs, loss = self.loss_calculation(x)
+            monitor_step(self, x, outputs)
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.optimizer.zero_grad()
         else:
             outputs, loss = self.loss_calculation(x)
+            monitor_step(self, x, outputs)
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
