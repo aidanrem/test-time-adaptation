@@ -67,9 +67,48 @@ def _self_stats(logits):
     return me.item(), conc.item(), ent.item()
 
 
+@torch.no_grad()
+def patch_shuffle(x, n=4):
+    """Object-destructive transform from DeYO (Lee et al., ICLR 2024).
+
+    Split each image into an n x n grid and permute the patches independently
+    per sample. Destroys global shape while preserving local texture and colour.
+    Images whose side is not divisible by n are cropped to the nearest multiple.
+    """
+    B, C, H, W = x.shape
+    ph, pw = H // n, W // n
+    x = x[:, :, :ph * n, :pw * n]
+    p = x.reshape(B, C, n, ph, n, pw).permute(0, 2, 4, 1, 3, 5)   # B,n,n,C,ph,pw
+    p = p.reshape(B, n * n, C, ph, pw)
+    perm = torch.argsort(torch.rand(B, n * n, device=x.device), dim=1)
+    p = p[torch.arange(B, device=x.device).unsqueeze(1), perm]
+    p = p.reshape(B, n, n, C, ph, pw).permute(0, 3, 1, 4, 2, 5)
+    return p.reshape(B, C, n * ph, n * pw)
+
+
+@torch.no_grad()
+def plpd_deficit(logits, shuffled_logits):
+    """Negated batch-mean PLPD.
+
+    PLPD(x) = p(x)[y_hat] - p(x')[y_hat], with y_hat = argmax p(x) and x' the
+    patch-shuffled image. High PLPD means the prediction depends on shape.
+    A collapsed model predicts the same class regardless of input, so shuffling
+    changes nothing and PLPD falls toward zero.
+
+    We store the NEGATION so that, like every other statistic here, larger
+    values mean less healthy. AUROC above 0.5 then means it flags collapse.
+    """
+    p = F.softmax(logits.float(), dim=-1)
+    q = F.softmax(shuffled_logits.float(), dim=-1)
+    y = p.argmax(-1, keepdim=True)
+    plpd = (p.gather(-1, y) - q.gather(-1, y)).squeeze(-1)
+    return -plpd.mean().item()
+
+
 # ------------------------------------------------------------------- monitor
 class ConstraintMonitor:
-    KEYS = ['kl_src', 'agree_src', 'kl_bn', 'agree_bn', 'me', 'conc', 'ent']
+    KEYS = ['kl_src', 'agree_src', 'kl_bn', 'agree_bn', 'me', 'conc', 'ent',
+            'plpd_def']
 
     def __init__(self, params=None, anchors=('src', 'bn')):
         self.anchors = tuple(anchors)
@@ -82,7 +121,7 @@ class ConstraintMonitor:
 
     @torch.no_grad()
     def update(self, logits, src_logits=None, bn_logits=None,
-               batch_acc=None, domain=None):
+               shuffled_logits=None, batch_acc=None, domain=None):
         logits = logits.detach()
 
         if src_logits is not None:
@@ -103,6 +142,10 @@ class ConstraintMonitor:
         self.rows['me'].append(me)
         self.rows['conc'].append(conc)
         self.rows['ent'].append(ent)
+
+        self.rows['plpd_def'].append(
+            plpd_deficit(logits, shuffled_logits) if shuffled_logits is not None
+            else np.nan)
 
         self.batch_acc.append(np.nan if batch_acc is None else float(batch_acc))
         self.domain.append(-1 if domain is None else domain)
@@ -200,4 +243,15 @@ def monitor_step(method, x, outputs):
     imgs = x[0] if isinstance(x, (list, tuple)) else x
     src_logits = method.anchor_src(imgs) if method.anchor_src is not None else None
     bn_logits = method.anchor_bn(imgs) if method.anchor_bn is not None else None
-    method.monitor.update(outputs, src_logits=src_logits, bn_logits=bn_logits)
+
+    # PLPD: the ADAPTING model on a patch-shuffled copy of the batch. One extra
+    # forward pass, no gradients. Batch-norm layers here use batch statistics with
+    # tracking disabled (or running statistics in eval mode), so nothing updates.
+    # Set MONITOR_PLPD=0 to skip it.
+    shuffled_logits = None
+    if os.environ.get("MONITOR_PLPD", "1") != "0":
+        n = int(os.environ.get("MONITOR_PLPD_GRID", "4"))
+        shuffled_logits = method.model(patch_shuffle(imgs, n))
+
+    method.monitor.update(outputs, src_logits=src_logits, bn_logits=bn_logits,
+                          shuffled_logits=shuffled_logits)
